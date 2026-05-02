@@ -1,5 +1,7 @@
 "use client";
 
+import "temporal-polyfill/global";
+
 import {
   createViewDay,
   createViewMonthAgenda,
@@ -12,33 +14,66 @@ import { ScheduleXCalendar, useNextCalendarApp } from "@schedule-x/react";
 import "@schedule-x/theme-default/dist/index.css";
 import { useMemo } from "react";
 
+import { DEFAULT_TIMEZONE } from "@/lib/date";
+
 export type CalendarEvent = {
   id: string;
   title: string;
-  start: string;
-  end: string;
+  start: string | Date;
+  end: string | Date;
   description?: string;
 };
 
 type EventCalendarProps = {
   events: CalendarEvent[];
   defaultView?: "month-grid" | "week" | "day" | "month-agenda";
-  selectedDate?: string;
+  selectedDate?: string | Date;
+  timeZone?: string;
 };
+
+function toMillis(value: string | Date): number {
+  return value instanceof Date ? value.getTime() : new Date(value).getTime();
+}
+
+function toZdt(value: string | Date, timeZone: string): Temporal.ZonedDateTime {
+  return Temporal.Instant.fromEpochMilliseconds(toMillis(value)).toZonedDateTimeISO(timeZone);
+}
+
+function toPlainDate(value: string | Date, timeZone: string): Temporal.PlainDate {
+  return toZdt(value, timeZone).toPlainDate();
+}
 
 export function EventCalendar({
   events,
   defaultView = "month-grid",
   selectedDate,
+  timeZone = DEFAULT_TIMEZONE,
 }: EventCalendarProps) {
   const eventsService = useMemo(() => createEventsServicePlugin(), []);
   const currentTime = useMemo(() => createCurrentTimePlugin(), []);
 
+  const sxEvents = useMemo(
+    () =>
+      events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        start: toZdt(e.start, timeZone),
+        end: toZdt(e.end, timeZone),
+      })),
+    [events, timeZone],
+  );
+
+  const sxSelectedDate = useMemo(
+    () => (selectedDate ? toPlainDate(selectedDate, timeZone) : undefined),
+    [selectedDate, timeZone],
+  );
+
   const calendar = useNextCalendarApp({
     views: [createViewMonthGrid(), createViewWeek(), createViewDay(), createViewMonthAgenda()],
     defaultView,
-    selectedDate,
-    events,
+    selectedDate: sxSelectedDate,
+    events: sxEvents,
     plugins: [eventsService, currentTime],
     locale: "ko-KR",
   });
